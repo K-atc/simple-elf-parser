@@ -23,18 +23,6 @@ typedef std::map<std::string, struct section> sections;
 
 #define IS_ELF(h) (h->e_ident[0] == 0x7f && h->e_ident[1] == 'E' && h->e_ident[2] == 'L' && h->e_ident[3] == 'F')
 
-int elf_bits(Elf32_Ehdr ehdr)
-{
-    switch (ehdr.e_ident[EI_CLASS]) {
-		case ELFCLASS32:
-			return 32;
-		case ELFCLASS64:
-			return 64;
-		default:
-			return 0;
-    }
-}
-
 err_t parse_elf(char *file_name, sections *sections)
 {
     int fd = open(file_name, O_RDONLY);
@@ -57,11 +45,6 @@ err_t parse_elf(char *file_name, sections *sections)
         shstr = (Elf64_Shdr *)(head + e64hdr->e_shoff + e64hdr->e_shentsize * e64hdr->e_shstrndx);
         for (int i = 0; i < e64hdr->e_shnum; i++) {
             shdr = (Elf64_Shdr *)(head + e64hdr->e_shoff + e64hdr->e_shentsize * i);
-            // printf("%s (addr=0x%x, size=0x%x)\n", 
-            //     (char *)(head + shstr->sh_offset + shdr->sh_name),
-            //     shdr->sh_addr,
-            //     shdr->sh_size
-            //     );
             std::string section_name = std::string((char*) head + shstr->sh_offset + shdr->sh_name);
             struct section s = {(long unsigned int) shdr->sh_addr, (long unsigned int) shdr->sh_size};
             (*sections)[section_name] = s;           
