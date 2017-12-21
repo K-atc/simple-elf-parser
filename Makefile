@@ -1,5 +1,6 @@
 BIN := simple-elf-parser hello
 # CXXOPT := -Wl,--verbose
+CXXOPT := -Wno-pointer-arith
 
 all: $(BIN)
 	@### Do Nothing 
