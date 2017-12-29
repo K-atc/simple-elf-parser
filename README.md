@@ -3,6 +3,13 @@ Simple ELF Parser
 
 C++ script to parse ELF file.
 
+The Parser parses:
+
+* Entry Point
+* Sections
+* Segments
+* Symbols
+
 
 Usage
 ----
@@ -43,5 +50,5 @@ make test
 
 TODO
 ----
-* Entry Point
-* 
+* Dinamic Library
+* Relocs

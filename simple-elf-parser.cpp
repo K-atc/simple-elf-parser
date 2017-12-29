@@ -32,14 +32,15 @@ struct segment {
     Elf32_Word type;
 };
 typedef std::map<int, struct segment> segments;
+typedef std::map<std::string, unsigned long int> symbols;
 
 #define IS_ELF(h) (h->e_ident[0] == 0x7f && h->e_ident[1] == 'E' && h->e_ident[2] == 'L' && h->e_ident[3] == 'F')
 
-err_t parse_elf(char *file_name, header *header, sections *sections, segments *segments)
+err_t parse_elf(char *file_name, header *header, sections *sections, segments *segments, symbols *symbols)
 {
     // open elf file
     int fd = open(file_name, O_RDONLY);
-    if (fd == 0) {
+    if (fd <= 0) {
         return ERR_EXIST;
     }
 
@@ -49,37 +50,54 @@ err_t parse_elf(char *file_name, header *header, sections *sections, segments *s
     void *head = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
 
     // check the file's magic number
-    Elf32_Ehdr *ehdr = (Elf32_Ehdr *)head; // parse this file as 32-bit elf
-    if (!IS_ELF(ehdr)) {
+    Elf32_Ehdr *e32hdr = (Elf32_Ehdr *)head; // parse this file as 32-bit elf
+    if (!IS_ELF(e32hdr)) {
         return ERR_FORMAT;
     }
 
-    if (ehdr->e_ident[EI_CLASS] == ELFCLASS64) { // this is 64-bit elf
-        Elf64_Ehdr *e64hdr;
+    if (e32hdr->e_ident[EI_CLASS] == ELFCLASS64) { // this is 64-bit elf
+        Elf64_Ehdr *ehdr;
         Elf64_Shdr *shdr;
         Elf64_Shdr *shstr;
+        Elf64_Shdr *str;        
         Elf64_Phdr *phdr;
 
         // re-parse elf header
-        e64hdr = (Elf64_Ehdr *) ehdr;
+        ehdr = (Elf64_Ehdr *) e32hdr;
 
         // parse header
-        header->entry_point = e64hdr->e_entry;
+        header->entry_point = ehdr->e_entry;
         
         // parse sections
-        shstr = (Elf64_Shdr *)(head + e64hdr->e_shoff + e64hdr->e_shentsize * e64hdr->e_shstrndx);
-        for (int i = 0; i < e64hdr->e_shnum; i++) {
-            shdr = (Elf64_Shdr *)(head + e64hdr->e_shoff + e64hdr->e_shentsize * i);
+        shstr = (Elf64_Shdr *)(head + ehdr->e_shoff + ehdr->e_shentsize * ehdr->e_shstrndx);
+        for (int i = 0; i < ehdr->e_shnum; i++) {
+            shdr = (Elf64_Shdr *)(head + ehdr->e_shoff + ehdr->e_shentsize * i);
             std::string section_name = std::string((char*) head + shstr->sh_offset + shdr->sh_name);
             struct section s = {(long unsigned int) shdr->sh_addr, (long unsigned int) shdr->sh_offset, (long unsigned int) shdr->sh_size};
-            (*sections)[section_name] = s;        
+            (*sections)[section_name] = s;  
+            if (section_name == ".strtab") str = shdr; // used in symbols
         }
 
         // parse segments
-        for (int i = 0; i < e64hdr->e_phnum; i++) {
-            phdr = (Elf64_Phdr *)(head + e64hdr->e_phoff + e64hdr->e_phentsize * i);
+        for (int i = 0; i < ehdr->e_phnum; i++) {
+            phdr = (Elf64_Phdr *)(head + ehdr->e_phoff + ehdr->e_phentsize * i);
             struct segment s = {(long unsigned int) phdr->p_vaddr, (long unsigned int) phdr->p_offset, (long unsigned int) phdr->p_filesz, (Elf32_Word) phdr->p_type};
             (*segments)[i] = s;
+        }
+
+        // parse symbols
+        for (int i = 0; i < ehdr->e_shnum; i++) {
+            shdr = (Elf64_Shdr *)(head + ehdr->e_shoff + ehdr->e_shentsize * i);
+            if (shdr->sh_type != SHT_SYMTAB) continue;
+            Elf64_Shdr *sym;
+            Elf64_Sym *symp;
+            sym = shdr;
+            for (int j = 0; j < sym->sh_size / sym->sh_entsize; j++) {
+                symp = (Elf64_Sym *)(head + sym->sh_offset + sym->sh_entsize * j);
+                if (!symp->st_name) continue;
+                printf("\t[%d]\t%lx\t%d\t%s\n", j, symp->st_value, symp->st_size, (char *)(head + str->sh_offset + symp->st_name));
+                (*symbols)[std::string((char *)(head + str->sh_offset + symp->st_name))] = symp->st_value;
+            }
         }
     }
     else { // Unsupported
@@ -117,6 +135,16 @@ void print_segments(segments *segments)
     }
 }
 
+void print_symbols(symbols *symbols)
+{
+    puts("=== [symbols] ===");
+    for(auto itr = symbols->begin(); itr != symbols->end(); ++itr) {
+        printf("%s (addr/offset=0x%x)\n", 
+            itr->first.c_str(), itr->second
+            );
+    }
+}
+
 void usage(char* argv[])
 {
     puts("Simple ELF Parser");
@@ -136,14 +164,17 @@ int main(int argc, char* argv[])
     header header;
     sections sections;
     segments segments;
-    err = parse_elf(ELF_FILE, &header, &sections, &segments);
+    symbols symbols;
+    err = parse_elf(ELF_FILE, &header, &sections, &segments, &symbols);
     if (err) {
         if (err == ERR_EXIST) perror("file not exists.");
         if (err == ERR_FORMAT) fprintf(stdout, "this is not elf.");
+        return 1;
     }
     print_header(&header);
     print_sections(&sections);
     print_segments(&segments);
+    print_symbols(&symbols);
 
     return 0;
 }
