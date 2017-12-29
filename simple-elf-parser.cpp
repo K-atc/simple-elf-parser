@@ -32,7 +32,11 @@ struct segment {
     Elf32_Word type;
 };
 typedef std::map<int, struct segment> segments;
-typedef std::map<std::string, unsigned long int> symbols;
+struct symbol {
+    long unsigned int value; // offset or address  
+    long unsigned int size;
+};
+typedef std::map<std::string, struct symbol> symbols;
 
 #define IS_ELF(h) (h->e_ident[0] == 0x7f && h->e_ident[1] == 'E' && h->e_ident[2] == 'L' && h->e_ident[3] == 'F')
 
@@ -95,8 +99,11 @@ err_t parse_elf(char *file_name, header *header, sections *sections, segments *s
             for (int j = 0; j < sym->sh_size / sym->sh_entsize; j++) {
                 symp = (Elf64_Sym *)(head + sym->sh_offset + sym->sh_entsize * j);
                 if (!symp->st_name) continue;
-                printf("\t[%d]\t%lx\t%d\t%s\n", j, symp->st_value, symp->st_size, (char *)(head + str->sh_offset + symp->st_name));
-                (*symbols)[std::string((char *)(head + str->sh_offset + symp->st_name))] = symp->st_value;
+                if (symp->st_value) {
+                    std::string symbol_name = std::string((char *)(head + str->sh_offset + symp->st_name));
+                    struct symbol s = {symp->st_value, symp->st_size};
+                    (*symbols)[symbol_name] = s;
+                }
             }
         }
     }
@@ -139,8 +146,8 @@ void print_symbols(symbols *symbols)
 {
     puts("=== [symbols] ===");
     for(auto itr = symbols->begin(); itr != symbols->end(); ++itr) {
-        printf("%s (addr/offset=0x%x)\n", 
-            itr->first.c_str(), itr->second
+        printf("%s (addr/offset=0x%x, size=0x%x)\n", 
+            itr->first.c_str(), itr->second.value, itr->second.size
             );
     }
 }
